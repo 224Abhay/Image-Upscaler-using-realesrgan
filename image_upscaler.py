@@ -2,6 +2,7 @@ import os
 import subprocess
 from datetime import datetime
 from tqdm import tqdm
+import shutil
 
 class ImageUpscaler:
     def __init__(self, input_dir="inputs", base_output_dir="outputs"):
@@ -29,7 +30,10 @@ class ImageUpscaler:
         for image in os.listdir(self.input_dir):
             new_image = image.replace("(", "").replace(")", "").replace(" ", "")
             if new_image != image:
-                os.rename(os.path.join(self.input_dir, image), os.path.join(self.input_dir, new_image))
+                try:
+                    os.rename(os.path.join(self.input_dir, image), os.path.join(self.input_dir, new_image))
+                except Exception as e:
+                    print(f"Warning: Could not rename {image} to {new_image}: {e}")
 
     def detect_gpu(self):
         """Detects and prints which GPU is being used for Real-ESRGAN."""
@@ -44,7 +48,9 @@ class ImageUpscaler:
             print("⚠️ Real-ESRGAN not found! Make sure it's installed and in the system PATH.")
 
     def upscale_images(self):
-        """Runs Real-ESRGAN upscaling on images with a progress bar."""
+        """Runs Real-ESRGAN upscaling on images with a progress bar. Moves successful images to 'inputs/success'."""
+        success_dir = os.path.join("success")
+        os.makedirs(success_dir, exist_ok=True)
         images = [img for img in os.listdir(self.input_dir) if img.lower().endswith((".jpg", ".jpeg", ".webp", ".png"))]
 
         # Display GPU info before starting
@@ -52,10 +58,18 @@ class ImageUpscaler:
 
         # Progress bar
         for image in tqdm(images, desc="Upscaling images", unit="image"):
+            input_path = os.path.join(self.input_dir, image)
             output_path = os.path.join(self.output_dir, image)
             if not os.path.exists(output_path):  # Avoid re-processing
-                command = f'realesrgan-ncnn-vulkan.exe -i {os.path.join(self.input_dir, image)} -o {output_path}'
-                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)  # Suppress output
+                command = f'realesrgan-ncnn-vulkan.exe -i "{input_path}" -o "{output_path}"'
+                result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
+                if result.returncode == 0:
+                    # Move the successfully upscaled image to the success folder
+                    try:
+                        shutil.move(input_path, os.path.join(success_dir, image))
+                    except Exception as e:
+                        print(f"Warning: Could not move {image} to success folder: {e}")
+                # If failed, leave the image in the input folder
 
     def run_pipeline(self):
         """Executes the full image processing pipeline."""
